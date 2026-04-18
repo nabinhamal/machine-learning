@@ -50,7 +50,7 @@ coverage.xml
 pytestdebuglog.txt
 
 # Translations
-*.mo
+
 *.pot
 
 # Django stuff:
