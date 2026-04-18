@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+celery
+redis
+amqp
+sqlalchemy
+psycopg2-binary
+pgvector
+slowapi
+python-dotenv
+pydantic
+email-validator
+httpx
+requests

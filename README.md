@@ -1,122 +1,192 @@
-# Product Search API (ML Project)
+# Machine Learning & Background Jobs Stack
 
-A FastAPI-powered backend service for searching and listing products from a JSON-based data store. This project serves as a foundation for product-related machine learning tasks, such as recommendations or classification.
+This project is a high-performance, containerized microservices architecture designed for machine learning workflows and intensive background task processing. It features High Availability (HA) routing, vector database support, real-time monitoring, and a **Proactive Telegram Alerting System**.
 
-## Project Structure
+## 🏗 Architecture & Flow
 
-```text
-ml/
-├── app/
-│   ├── data/
-│   │   └── products.json      # Product database (JSON)
-│   ├── service/
-│   │   ├── __init__.py
-│   │   └── products.py       # Data loading and search logic
-│   ├── __init__.py
-│   ├── main.py               # FastAPI application entry point
-│   └── requirements.txt      # Project dependencies
-├── scratch/                   # Experimental scripts and tests
-│   └── test_search.py        # Independent search logic testing
-├── scripts/                   # Utility scripts
-│   └── safety_hook.py        # Pre-execution safety hooks
-└── README.md                  # Project documentation
+The following diagram illustrates the data flow and component relationships, including the new monitoring layer:
+
+```mermaid
+graph TD
+    Client[Client / Browser] -->|Port 80| HAProxy[HAProxy Gateway]
+
+    subgraph "High Availability Entry"
+        HAProxy -->|Primary| Nginx1[Nginx Primary]
+        HAProxy -.->|Standby Failover| Nginx2[Nginx Backup]
+    end
+
+    subgraph "Application Layer"
+        Nginx1 --> API[FastAPI App]
+        Nginx2 --> API
+        API -->|Enqueue Task| RabbitMQ[RabbitMQ Broker]
+        API -->|Check Rate Limit| Redis[Redis Backend]
+        API -->|Store/Search| Postgres[Postgres + pgvector]
+        API -->|Alerts| Telegram[Telegram Bot API]
+    end
+
+    subgraph "Watcher Layer"
+        Watchdog[System Watchdog] -->|Periodic /health Check| API
+        Watchdog -->|Downtime Alerts| Telegram
+    end
+
+    subgraph "Worker Layer"
+        Worker[Celery Worker] -->|Consume| RabbitMQ
+        Worker -->|Store Result| Redis
+        Worker -->|DB Ops| Postgres
+    end
+
+    subgraph "Monitoring & Logging"
+        Promtail[Promtail] -->|Scrape Logs| DockerLogs[(Docker Logs)]
+        Promtail -->|Ship| Loki[Loki]
+        Grafana[Grafana] -->|Visualize| Loki
+        Flower[Flower] -->|Monitor Jobs| RabbitMQ
+    end
 ```
 
-## Features
+---
 
-- **FastAPI Framework**: High-performance asynchronous API.
-- **Product Search**: Case-insensitive search by product name.
-- **Health Check**: Endpoint to verify service status.
-- **RESTful Design**: Clean and structured JSON responses.
+## 🚀 Quick Start Guide
 
-## Prerequisites
+### 1. Prerequisites
 
-- Python 3.8+
-- Virtual Environment (recommended)
+- **Docker & Docker Compose**: [Download here](https://www.docker.com/products/docker-desktop)
+- **Git**: To clone the repository.
+- **Telegram Account**: To set up monitoring alerts.
 
-## Installation & Setup
+### 2. Setup & Installation
 
-1. **Clone the repository**:
+1. **Clone the Repository**:
 
-   ```bash
-   git clone <repository-url>
-   cd ml
-   ```
+    ```bash
+    git clone <repository-url>
+    cd ml
+    ```
 
-2. **Create and activate a virtual environment**:
+2. **Configure Environment**:
+    Inside the `background-jobs` directory, edit the `.env` file to add your secrets:
 
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
-   ```
+    ```bash
+    cd background-jobs
+    cp .env.example .env  # If not already present
+    ```
 
-3. **Install dependencies**:
+3. **Launch the System**:
 
-   ```bash
-   pip install -r app/requirements.txt
-   ```
+    ```bash
+    docker-compose up --build -d
+    ```
 
-## Running the Application
+---
 
-Start the FastAPI server using `uvicorn`:
+## ⚙️ Environment Variables
 
-```bash
-uvicorn app.main:app --reload
+Before running the stack, ensure you have a `.env` file in the `background-jobs` directory. Below are the critical variables required:
+
+### 📡 Telegram Monitoring
+| Variable | Required | Description |
+| :--- | :--- | :--- |
+| `TELEGRAM_BOT_TOKEN` | Yes | Token from [@BotFather](https://t.me/BotFather). |
+| `TELEGRAM_CHAT_ID` | Yes | Your numeric Chat ID (from `@userinfobot`). |
+
+### 🗄️ Database (PostgreSQL)
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `POSTGRES_USER` | `myuser` | Database administrator username. |
+| `POSTGRES_PASSWORD` | `mypassword` | Database password. |
+| `POSTGRES_DB` | `ml_database` | Name of the primary database. |
+| `DATABASE_URL` | `postgresql://...` | Full SQLAlchemy connection string. |
+
+### 📨 Messaging & Tasks (RabbitMQ/Redis)
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `CELERY_BROKER_URL` | `amqp://...` | RabbitMQ connection URL for task distribution. |
+| `CELERY_RESULT_BACKEND` | `redis://...` | Redis URL for storing background job results. |
+
+### 🌐 Infrastructure
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `BASE_URL` | `http://localhost:8000` | The primary URL where the API is hosted internally. |
+
+---
+
+## 🤖 Telegram Monitoring Setup
+
+This project uses a proactive monitoring system that alerts you if the server goes down or if the backend encounters internal errors.
+
+### Step 1: Create a Telegram Bot
+
+1. Open Telegram and search for **@BotFather**.
+2. Send `/newbot` and follow the instructions to name your bot.
+3. **Save the API Token** provided (e.g., `123456789:ABCDefgh...`).
+
+### Step 2: Get your Chat ID
+
+1. Search for **@userinfobot** in Telegram.
+2. Send any message to it, and it will reply with your **Id** (a series of numbers).
+3. *Note: If you want to send alerts to a group, add the bot to the group and use a bot like @combybot to find the group's Chat ID.*
+
+### Step 3: Configure `.env`
+
+Open `background-jobs/.env` and fill in the following:
+
+```env
+TELEGRAM_BOT_TOKEN=your_token_from_botfather
+TELEGRAM_CHAT_ID=your_id_from_userinfobot
 ```
 
-The API will be available at `http://127.0.0.1:8000`.
+### Step 4: Verify the Connection
 
-## API Documentation
+Once configured and the system is running:
 
-Once the server is running, you can access the interactive API docs at:
+- Visit `http://localhost/health` to see the live status of all services.
+- If you stop the database (`docker-compose stop db`), you will receive a Telegram alert within 60 seconds.
 
-- Swagger UI: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- Redoc: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
+---
 
-### Endpoints
+## 🛠 Internal Access Points
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
+| Service | URL | Credentials | Description |
+| :--- | :--- | :--- | :--- |
+| **Main API** | [http://localhost](http://localhost) | - | Production entry via HAProxy |
+| **API Docs** | [http://localhost/docs](http://localhost/docs) | - | Interactive Swagger UI |
+| **System Health** | [http://localhost/health](http://localhost/health) | - | **Live status of DB, Redis, Celery** |
+| **Celery (Flower)** | [http://localhost/flower/](http://localhost/flower/) | - | Background job dashboard |
+| **Grafana** | [http://localhost:3000](http://localhost:3000) | `admin` / `admin` | Log visualization (Loki) |
+| **HAProxy Status** | [http://localhost:1936](http://localhost:1936) | `admin` / `admin` | Load balancer health |
+| **RabbitMQ** | [http://localhost:15672](http://localhost:15672) | `guest` / `guest` | Message queue management |
 
-| `GET` | `/` | Root endpoint, returns status OK. |
-| `GET` | `/health` | Service health check. |
-| `GET` | `/products` | List all products or search by name. |
+---
 
-#### Product Search Parameters
+## 🚦 System Features & Workflow
 
-- `name` (query string): Optional. Search term for product names (min: 1 char, max: 50 chars).
+### 🟢 High Availability
 
-**Example Request**:
+- **HAProxy**: Monitors two Nginx instances. If the primary instance fails, traffic is instantly routed to the backup.
+- **Failover Testing**: Run `docker-compose stop ml_nginx_primary` and notice the site stays up!
 
-```bash
-curl http://127.0.0.1:8000/products?name=xiaomi
-```
+### 🔴 Intelligent Alerting
 
-## Technical Implementation
+- **Exception Catcher**: Any 500 error in the API is instantly sent to your Telegram with the error type and relevant request headers.
+- **Watchdog**: A standalone service pings the system health every minute. If the entire server crashes, you get a "System Down" notification.
 
-- **Data Persistence**: Uses a flat-file JSON storage (`app/data/products.json`).
-- **Input Validation**: Leverages FastAPI's `Query` parameters for automatic validation and range checking.
-- **Search Logic**: Implements a case-insensitive partial match algorithm using native Python list comprehensions.
-- **Service Layer**: Decouples API routes from data access logic via `app/service/products.py`.
+### 🟡 ML-Ready Storage
 
-## Security & Reliability
+- **pgvector**: The PostgreSQL database is pre-configured with the `vector` extension, allowing you to store and search machine learning embeddings directly.
 
-- **Safety Hooks**: A pre-commit safety script (`scripts/safety_hook.py`) prevents the inclusion of dangerous shell commands in the codebase.
-- **Input Sanitization**: Query strings are stripped of whitespace and normalized to prevent simple injection or formatting issues.
-- **Error Handling**: Standard HTTP status codes (404 for missing products, 422 for validation errors) are used consistently.
+### 🟣 Centralized Logging
 
-## Development & Testing
+- **Loki & Promtail**: All container logs are centralized.
+- **View Logs**: Open Grafana → Explore → Select Loki → Query `{container="ml_api"}`.
 
-You can run experimental search tests without starting the server:
+---
 
-```bash
-python scratch/test_search.py
-```
+## 📝 Troubleshooting
 
-## Future Roadmap
+- **Containers won't start?** check `docker compose ps` and `docker compose logs`.
+- **No Telegram messages?** Double-check your `TELEGRAM_BOT_TOKEN` and ensure your bot isn't muted.
+- **Service Unhealthy?** Check the `/health` endpoint output for specific service errors (e.g., "no active workers found").
 
-- [ ] Implement product categorization using NLP.
-- [ ] Add vector-based semantic search.
-- [ ] Integrate a proper database (PostgreSQL/MongoDB).
-- [ ] Containerization with Docker.
-- [ ] Unit testing for service layer components.
+---
+
+> [!TIP]
+> This stack is built for scale. You can add more workers by running `docker-compose up -d --scale worker=3`.
